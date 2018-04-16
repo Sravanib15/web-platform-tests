@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="/feature-policy/experimental-features/resources/vertical-scroll.js"></script>
+<style>
+html, body {
+  height: 100%;
+  width: 100%;
+}
+
+iframe {
+  width: 95%;
+  height: 95%;
+  overflow: scroll;
+  margin-top: 200%;
+}
+
+.spacer {
+  width: 100%;
+  height: 100%;
+  margin-top: 100%;
+  margin-bottom: 100%;
+}
+
+</style>
+<p> An &lt;iframe&gt; further below which is not allowed to block scroll.</p>
+<div class="spacer"></div>
+<iframe></iframe>
+<p> Making sure there is room for vertical scroll </p>
+<script>
+  "use strict";
+
+  let fileName = "vertical-scroll-scrollintoview.html";
+  let iframeElement = document.querySelector("iframe");
+
+  // Enabled 'vertical-scroll': scrollIntoView should work in all frames.
+  promise_test(async() => {
+    window.scrollTo(0, 0);
+    await loadUrlInIframe(iframeElement, getUrl(fileName));
+    let iframeBounds =  iframeElement.getBoundingClientRect();
+    assert_false(rects_intersect(visualViewportRect(), iframeBounds),
+      "<iframe> should not be visible at first." +
+      `<iframe> bounds: ${rectToString(iframeBounds)} but visual viewport` +
+      ` is: ${rectToString(visualViewportRect())}.`);
+
+    await sendMessageAndGetResponse(
+      iframeElement.contentWindow,
+      {type: "child-frame-bounds"}).then((response) => {
+        let iframeBoundsAtOrigin = {
+          x: 0,
+          y: 0,
+          width: iframeBounds.width,
+          height: iframeBounds.height};
+          let nestedFrameBounds = response.bounds;
+          assert_false(rects_intersect(iframeBoundsAtOrigin, nestedFrameBounds),
+            "Nested <iframe> should not be visible in visual viewport." +
+            `Nested <iframe>'s bounds: ${rectToString(response.bounds)}.`);
+        });
+    // Scroll the body of inner-most frame.
+    await sendMessageAndGetResponse(iframeElement.contentWindow,
+      {type: "scroll"}).then((response) => {
+      // Make sure the nested <iframe> is visible.
+      let nestedFrameBounds = response.bounds;
+      let iframeBounds = iframeElement.getBoundingClientRect();
+      nestedFrameBounds.x += iframeBounds.x;
+      nestedFrameBounds.y += iframeBounds.y;
+      assert_true(rects_intersect(nestedFrameBounds, visualViewportRect()),
+        "Nested <iframe> is not visible in visual viewport." +
+        `Approximate bounds: ${rectToString(nestedFrameBounds)}` +
+        " but the visual viewport is:" +
+        `${rectToString(visualViewportRect())}`);
+    });
+    }, "Calling 'scrollIntoView()' inside a <iframe> will propagate up by" +
+    " default('vertical-scroll' enabled).");
+
+
+  // Disabled 'vertical-scroll': The scope of scrollIntoView is within the set
+  // of disabled frames (does not propagate to main frame).
+  promise_test(async() => {
+    window.scrollTo(0, 0);
+    iframeElement.allow = "vertical-scroll 'none';";
+    await loadUrlInIframe(iframeElement, getUrl(fileName));
+    let iframeBounds =  iframeElement.getBoundingClientRect();
+    assert_false(rects_intersect(visualViewportRect(), iframeBounds),
+      "<iframe> should not be visible at first." +
+      `<iframe> bounds: ${rectToString(iframeBounds)} but visual viewport` +
+      ` is: ${rectToString(visualViewportRect())}.`);
+
+    await sendMessageAndGetResponse(
+      iframeElement.contentWindow,
+      {type: "child-frame-bounds"}).then((response) => {
+      let iframeBoundsAtOrigin = {
+        x: 0,
+        y: 0,
+        width: iframeBounds.width,
+        height: iframeBounds.height};
+      let nestedFrameBounds = response.bounds;
+      assert_false(rects_intersect(iframeBoundsAtOrigin, nestedFrameBounds),
+            "Nested <iframe> should not be visible in visual viewport." +
+            `Nested <iframe>'s bounds: ${rectToString(response.bounds)}.`);
+      });
+    // Scroll the body of inner-most frame.
+    await sendMessageAndGetResponse(iframeElement.contentWindow,
+      {type: "scroll"}).then((response) => {
+      // Make sure the nested <iframe> is visible.
+      let nestedFrameBounds = response.bounds;
+      let iframeBounds = iframeElement.getBoundingClientRect();
+      let iframeBoundsAtOrigin = {
+        x: 0,
+        y: 0,
+        width: iframeBounds.width,
+        height: iframeBounds.height
+      };
+      assert_true(rects_intersect(nestedFrameBounds, iframeBoundsAtOrigin),
+        "Nested <iframe> is not visible in its container <iframe>." +
+        `Bounds for nested frame: ${rectToString(nestedFrameBounds)} but ` +
+        `<iframe> bounds at origin:  ${rectToString(iframeBoundsAtOrigin)}.`);
+
+      // The rect should not be visible in visual viewport.
+      nestedFrameBounds.x += iframeBounds.x;
+      nestedFrameBounds.y += iframeBounds.y;
+      assert_false(rects_intersect(nestedFrameBounds, visualViewportRect()),
+        "Nested <iframe> is not visible in visual viewport." +
+        `Approximate bounds: ${rectToString(nestedFrameBounds)}` +
+        " but the visual viewport is:" +
+        `${rectToString(visualViewportRect())}`);
+      assert_equals(
+          0,
+          window.scrollY,
+          "window.scrollY should not have changed.");
+    });
+    }, "Calling 'scrollIntoView()' inside a <iframe> which does not have" +
+    " 'vertical-scroll' permission will not propagate up to a frame which has" +
+    " the feature enabled.");
+
+  </script>
